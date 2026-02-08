@@ -31,6 +31,7 @@ struct SpeechScrollView: View {
     let words: [String]
     let highlightedCharCount: Int
     var font: NSFont = .systemFont(ofSize: 18, weight: .semibold)
+    var highlightColor: Color = .white
     var onWordTap: ((Int) -> Void)? = nil
 
     var isListening: Bool = true
@@ -45,6 +46,7 @@ struct SpeechScrollView: View {
                 words: words,
                 highlightedCharCount: highlightedCharCount,
                 font: font,
+                highlightColor: highlightColor,
                 containerWidth: geo.size.width,
                 onWordTap: { charOffset in
                     manualOffset = 0
@@ -164,6 +166,7 @@ struct WordFlowLayout: View {
     let words: [String]
     let highlightedCharCount: Int
     let font: NSFont
+    var highlightColor: Color = .white
     let containerWidth: CGFloat
     var onWordTap: ((Int) -> Void)? = nil
 
@@ -231,17 +234,18 @@ struct WordFlowLayout: View {
                 }
         }
 
-        // Dim color: yellow for current word, gray for unread
+        // Dim color: highlight color variant for current word, full for unread
         let dimColor: Color = isCurrentWord
-            ? Color.yellow.opacity(0.6)
-            : Color.white.opacity(0.3)
+            ? highlightColor.opacity(0.6)
+            : highlightColor
 
         // Base color for the whole word
-        let wordColor: Color = isFullyLit ? .white : dimColor
+        let wordColor: Color = isFullyLit ? highlightColor.opacity(0.3) : dimColor
 
         return Text(item.word + " ")
             .font(Font(font))
             .foregroundStyle(wordColor)
+            .underline(isCurrentWord, color: wordColor)
             .background(
                 GeometryReader { wordGeo in
                     Color.clear.preference(

@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var text: String = """
-Welcome to Prompt Island! This is your personal teleprompter that sits right below your MacBook's notch. [smile]
+Welcome to Textream! This is your personal teleprompter that sits right below your MacBook's notch. [smile]
 
 As you read aloud, the text will highlight in real-time, following your voice. The speech recognition matches your words and keeps track of your progress. [pause]
 

@@ -81,7 +81,8 @@ struct NotchPreviewContent: View {
                     SpeechScrollView(
                         words: Self.loremWords,
                         highlightedCharCount: highlightedCount,
-                        font: .systemFont(ofSize: 18, weight: .semibold),
+                        font: settings.font,
+                        highlightColor: settings.fontColorPreset.color,
                         isListening: false
                     )
                     .padding(.horizontal, 12)
@@ -98,19 +99,137 @@ struct NotchPreviewContent: View {
     }
 }
 
+// MARK: - Settings Tabs
+
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case general, fontSize, fontColor, overlayMode
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .general: return "General"
+        case .fontSize: return "Font Size"
+        case .fontColor: return "Color"
+        case .overlayMode: return "Overlay"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .general: return "slider.horizontal.3"
+        case .fontSize: return "textformat.size"
+        case .fontColor: return "paintpalette"
+        case .overlayMode: return "macwindow"
+        }
+    }
+}
+
 // MARK: - Settings View
 
 struct SettingsView: View {
     @Bindable var settings: NotchSettings
     @Environment(\.dismiss) private var dismiss
     @State private var previewController = NotchPreviewController()
+    @State private var selectedTab: SettingsTab = .general
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Notch Settings")
-                .font(.system(size: 15, weight: .semibold))
-                .padding(.top, 4)
+        HStack(spacing: 0) {
+            // Sidebar
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Settings")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
 
+                ForEach(SettingsTab.allCases) { tab in
+                    Button {
+                        selectedTab = tab
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: tab.icon)
+                                .font(.system(size: 12, weight: .medium))
+                                .frame(width: 16)
+                            Text(tab.label)
+                                .font(.system(size: 13, weight: .regular))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(selectedTab == tab ? Color.accentColor.opacity(0.15) : Color.clear)
+                        .foregroundStyle(selectedTab == tab ? Color.accentColor : .primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                Button("Reset") {
+                    settings.notchWidth = NotchSettings.defaultWidth
+                    settings.textAreaHeight = NotchSettings.defaultHeight
+                    settings.fontSizePreset = .lg
+                    settings.fontColorPreset = .white
+                    settings.overlayMode = .pinned
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+            }
+            .padding(12)
+            .frame(width: 120)
+            .frame(maxHeight: .infinity)
+            .background(Color.primary.opacity(0.04))
+
+            Divider()
+
+            // Content
+            VStack(spacing: 0) {
+                Group {
+                    switch selectedTab {
+                    case .general:
+                        generalTab
+                    case .fontSize:
+                        fontSizeTab
+                    case .fontColor:
+                        fontColorTab
+                    case .overlayMode:
+                        overlayModeTab
+                    }
+                }
+                .padding(16)
+                .frame(maxHeight: .infinity, alignment: .top)
+
+                Divider()
+
+                HStack {
+                    Spacer()
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .padding(12)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .frame(width: 500, height: 280)
+        .background(.ultraThinMaterial)
+        .onAppear {
+            previewController.show(settings: settings)
+        }
+        .onDisappear {
+            previewController.dismiss()
+        }
+    }
+
+    // MARK: - General Tab
+
+    private var generalTab: some View {
+        VStack(spacing: 14) {
             // Width slider
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -157,36 +276,144 @@ struct SettingsView: View {
                 }
                 .labelsHidden()
             }
+        }
+    }
 
-            // Buttons
-            HStack {
-                Button("Reset to Defaults") {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        settings.notchWidth = NotchSettings.defaultWidth
-                        settings.textAreaHeight = NotchSettings.defaultHeight
+    // MARK: - Font Size Tab
+
+    private var fontSizeTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Text Size")
+                .font(.system(size: 13, weight: .medium))
+
+            HStack(spacing: 8) {
+                ForEach(FontSizePreset.allCases) { preset in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            settings.fontSizePreset = preset
+                        }
+                    } label: {
+                        VStack(spacing: 6) {
+                            Text("Ag")
+                                .font(.system(size: preset.pointSize * 0.7, weight: .semibold))
+                                .foregroundStyle(settings.fontSizePreset == preset ? Color.accentColor : .primary)
+                            Text(preset.label)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(settings.fontSizePreset == preset ? Color.accentColor : .secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(settings.fontSizePreset == preset ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(settings.fontSizePreset == preset ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1.5)
+                        )
                     }
+                    .buttonStyle(.plain)
                 }
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Button("Done") {
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
             }
         }
-        .padding(20)
-        .frame(width: 320)
-        .background(.ultraThinMaterial)
-        .onAppear {
-            previewController.show(settings: settings)
+    }
+
+    // MARK: - Font Color Tab
+
+    private var fontColorTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Highlight Color")
+                .font(.system(size: 13, weight: .medium))
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 80), spacing: 8)], spacing: 8) {
+                ForEach(FontColorPreset.allCases) { preset in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            settings.fontColorPreset = preset
+                        }
+                    } label: {
+                        VStack(spacing: 8) {
+                            Circle()
+                                .fill(preset.color)
+                                .frame(width: 28, height: 28)
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                                )
+                                .overlay(
+                                    settings.fontColorPreset == preset
+                                        ? Image(systemName: "checkmark")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundStyle(preset == .white ? .black : .white)
+                                        : nil
+                                )
+                            Text(preset.label)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(settings.fontColorPreset == preset ? .primary : .secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(settings.fontColorPreset == preset ? preset.color.opacity(0.1) : Color.primary.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(settings.fontColorPreset == preset ? preset.color.opacity(0.4) : Color.clear, lineWidth: 1.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
-        .onDisappear {
-            previewController.dismiss()
+    }
+
+    // MARK: - Overlay Mode Tab
+
+    private var overlayModeTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Overlay Mode")
+                .font(.system(size: 13, weight: .medium))
+
+            VStack(spacing: 8) {
+                ForEach(OverlayMode.allCases) { mode in
+                    Button {
+                        settings.overlayMode = mode
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: mode.icon)
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundStyle(settings.overlayMode == mode ? Color.accentColor : .secondary)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(mode.label)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(settings.overlayMode == mode ? Color.accentColor : .primary)
+                                Text(mode.description)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                            Spacer()
+                            if settings.overlayMode == mode {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(settings.overlayMode == mode ? Color.accentColor.opacity(0.1) : Color.primary.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(settings.overlayMode == mode ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
 }

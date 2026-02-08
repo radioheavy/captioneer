@@ -45,27 +45,35 @@ class NotchOverlayController {
         guard let screen = NSScreen.main else { return }
 
         let settings = NotchSettings.shared
-        let notchWidth: CGFloat = settings.notchWidth
-        let textAreaHeight: CGFloat = settings.textAreaHeight
-        let maxExtraHeight: CGFloat = 350
-        let screenFrame = screen.frame
-        let visibleFrame = screen.visibleFrame
-
-        // Menu bar / notch height from top of screen
-        let menuBarHeight = screenFrame.maxY - visibleFrame.maxY
-
-        // Panel spans from the very top of the screen down past the notch (extra room for resize)
-        let panelHeight = menuBarHeight + textAreaHeight + maxExtraHeight
-        let yPosition = screenFrame.maxY - panelHeight
-        let xPosition = screenFrame.midX - notchWidth / 2
 
         // Normalize newlines to spaces, then split
         let normalized = text.replacingOccurrences(of: "\n", with: " ")
             .split(omittingEmptySubsequences: true, whereSeparator: { $0.isWhitespace })
             .map { String($0) }
         let words = normalized
-
         let totalCharCount = normalized.joined(separator: " ").count
+
+        let screenFrame = screen.frame
+
+        switch settings.overlayMode {
+        case .pinned:
+            showPinned(words: words, totalCharCount: totalCharCount, settings: settings, screen: screen)
+        case .floating:
+            showFloating(words: words, totalCharCount: totalCharCount, settings: settings, screenFrame: screenFrame)
+        }
+
+        speechRecognizer.start(with: text)
+    }
+
+    private func showPinned(words: [String], totalCharCount: Int, settings: NotchSettings, screen: NSScreen) {
+        let notchWidth = settings.notchWidth
+        let textAreaHeight = settings.textAreaHeight
+        let maxExtraHeight: CGFloat = 350
+        let screenFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+
+        // Menu bar / notch height from top of screen
+        let menuBarHeight = screenFrame.maxY - visibleFrame.maxY
 
         let frameTracker = NotchFrameTracker()
         frameTracker.screenMidX = screenFrame.midX
@@ -77,6 +85,7 @@ class NotchOverlayController {
         // Start panel at full target size (SwiftUI animates the notch shape inside)
         let targetHeight = menuBarHeight + textAreaHeight
         let targetY = screenFrame.maxY - targetHeight
+        let xPosition = screenFrame.midX - notchWidth / 2
         let panel = NSPanel(
             contentRect: NSRect(x: xPosition, y: targetY, width: notchWidth, height: targetHeight),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -96,8 +105,41 @@ class NotchOverlayController {
 
         panel.orderFrontRegardless()
         self.panel = panel
+    }
 
-        speechRecognizer.start(with: text)
+    private func showFloating(words: [String], totalCharCount: Int, settings: NotchSettings, screenFrame: CGRect) {
+        let panelWidth = settings.notchWidth
+        let panelHeight = settings.textAreaHeight
+
+        let xPosition = screenFrame.midX - panelWidth / 2
+        let yPosition = screenFrame.midY - panelHeight / 2 + 100
+
+        let floatingView = FloatingOverlayView(
+            words: words,
+            totalCharCount: totalCharCount,
+            speechRecognizer: speechRecognizer,
+            baseHeight: panelHeight
+        )
+        let contentView = NSHostingView(rootView: floatingView)
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: xPosition, y: yPosition, width: panelWidth, height: panelHeight),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.ignoresMouseEvents = false
+        panel.isMovableByWindowBackground = true
+        panel.sharingType = .none
+        panel.contentView = contentView
+
+        panel.orderFrontRegardless()
+        self.panel = panel
     }
 
     func dismiss() {
@@ -333,7 +375,8 @@ struct NotchOverlayView: View {
             SpeechScrollView(
                 words: words,
                 highlightedCharCount: speechRecognizer.recognizedCharCount,
-                font: .systemFont(ofSize: 18, weight: .semibold),
+                font: NotchSettings.shared.font,
+                highlightColor: NotchSettings.shared.fontColorPreset.color,
                 onWordTap: { charOffset in
                     speechRecognizer.jumpTo(charOffset: charOffset)
                 },
@@ -438,6 +481,140 @@ struct NotchOverlayView: View {
     }
 
     private var doneView: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("Done!")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            Spacer()
+        }
+        .transition(.scale.combined(with: .opacity))
+    }
+}
+
+// MARK: - Floating Overlay View
+
+struct FloatingOverlayView: View {
+    let words: [String]
+    let totalCharCount: Int
+    @Bindable var speechRecognizer: SpeechRecognizer
+    let baseHeight: CGFloat
+
+    @State private var appeared = false
+
+    var isDone: Bool {
+        totalCharCount > 0 && speechRecognizer.recognizedCharCount >= totalCharCount
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if isDone {
+                floatingDoneView
+            } else {
+                floatingPrompterView
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.black)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .opacity(appeared ? 1 : 0)
+        .scaleEffect(appeared ? 1 : 0.9)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.3)) {
+                appeared = true
+            }
+        }
+        .onChange(of: speechRecognizer.shouldDismiss) { _, shouldDismiss in
+            if shouldDismiss {
+                withAnimation(.easeIn(duration: 0.25)) {
+                    appeared = false
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.5), value: isDone)
+        .onChange(of: isDone) { _, done in
+            if done {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    speechRecognizer.shouldDismiss = true
+                }
+            }
+        }
+    }
+
+    private var floatingPrompterView: some View {
+        VStack(spacing: 0) {
+            SpeechScrollView(
+                words: words,
+                highlightedCharCount: speechRecognizer.recognizedCharCount,
+                font: NotchSettings.shared.font,
+                highlightColor: NotchSettings.shared.fontColorPreset.color,
+                onWordTap: { charOffset in
+                    speechRecognizer.jumpTo(charOffset: charOffset)
+                },
+                isListening: speechRecognizer.isListening
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+
+            HStack(alignment: .center, spacing: 8) {
+                AudioWaveformProgressView(
+                    levels: speechRecognizer.audioLevels,
+                    progress: totalCharCount > 0
+                        ? Double(speechRecognizer.recognizedCharCount) / Double(totalCharCount)
+                        : 0
+                )
+                .frame(width: 160, height: 24)
+
+                Text(speechRecognizer.lastSpokenText.split(separator: " ").suffix(3).joined(separator: " "))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    if speechRecognizer.isListening {
+                        speechRecognizer.stop()
+                    } else {
+                        speechRecognizer.resume()
+                    }
+                } label: {
+                    Image(systemName: speechRecognizer.isListening ? "mic.fill" : "mic.slash.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(speechRecognizer.isListening ? .yellow.opacity(0.8) : .white.opacity(0.6))
+                        .frame(width: 24, height: 24)
+                        .background(.white.opacity(0.15))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    speechRecognizer.forceStop()
+                    speechRecognizer.shouldDismiss = true
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 24, height: 24)
+                        .background(.white.opacity(0.15))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(height: 24)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
+    }
+
+    private var floatingDoneView: some View {
         VStack {
             Spacer()
             HStack(spacing: 6) {
