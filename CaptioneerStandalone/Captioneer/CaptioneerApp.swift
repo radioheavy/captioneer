@@ -65,13 +65,25 @@ struct CaptioneerApp: App {
                 .modifier(CaptionTranslationBridge(runtime: runtime))
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            CaptioneerSettingsWindowView(runtime: runtime)
+                .frame(minWidth: 760, minHeight: 620)
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
+                .keyboardShortcut(",", modifiers: [.command])
+            }
+        }
     }
 }
 
 private struct CaptioneerHomeView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Bindable var runtime: CaptioneerRuntime
-    @State private var isSettingsPresented = false
 
     var body: some View {
         ZStack {
@@ -87,9 +99,6 @@ private struct CaptioneerHomeView: View {
             }
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-        .sheet(isPresented: $isSettingsPresented) {
-            settingsSheet
         }
     }
 
@@ -150,9 +159,7 @@ private struct CaptioneerHomeView: View {
             .background(secondaryButtonBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .foregroundStyle(secondaryButtonForeground)
 
-            Button {
-                isSettingsPresented = true
-            } label: {
+            SettingsLink {
                 Label("Settings", systemImage: "slider.horizontal.3")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .frame(minWidth: 120, minHeight: 42)
@@ -271,24 +278,28 @@ private struct CaptioneerHomeView: View {
         colorScheme == .dark ? .black.opacity(0.18) : .black.opacity(0.04)
     }
 
-    private var settingsSheet: some View {
+}
+
+private struct CaptioneerSettingsWindowView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Bindable var runtime: CaptioneerRuntime
+
+    var body: some View {
         ZStack {
-            LinearGradient(colors: [baseBackgroundTop, baseBackgroundBottom],
-                           startPoint: .top,
-                           endPoint: .bottom)
+            LinearGradient(
+                colors: [
+                    colorScheme == .dark ? Color(red: 0.10, green: 0.12, blue: 0.15) : Color(nsColor: .windowBackgroundColor),
+                    colorScheme == .dark ? Color(red: 0.07, green: 0.09, blue: 0.12) : Color.white
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
             .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Settings")
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Button("Done") {
-                        isSettingsPresented = false
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
+                Text("Settings")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
 
                 ScrollView {
                     CaptioneerSettingsView(settings: runtime.settings) {
@@ -299,7 +310,6 @@ private struct CaptioneerHomeView: View {
             }
             .padding(20)
         }
-        .frame(minWidth: 700, minHeight: 620)
     }
 }
 
