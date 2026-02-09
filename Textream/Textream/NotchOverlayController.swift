@@ -62,7 +62,10 @@ class NotchOverlayController {
             showFloating(words: words, totalCharCount: totalCharCount, settings: settings, screenFrame: screenFrame)
         }
 
-        speechRecognizer.start(with: text)
+        // Word tracking & silence-paused need the microphone; classic does not
+        if settings.listeningMode != .classic {
+            speechRecognizer.start(with: text)
+        }
     }
 
     private func showPinned(words: [String], totalCharCount: Int, settings: NotchSettings, screen: NSScreen) {
@@ -272,6 +275,12 @@ struct NotchOverlayView: View {
     @State private var dragStartHeight: CGFloat = -1
     @State private var isHovering: Bool = false
 
+    // Timer-based scroll for classic & silence-paused modes
+    @State private var timerWordProgress: Double = 0
+    @State private var isPaused: Bool = false
+    @State private var isUserScrolling: Bool = false
+    private let scrollTimer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+
     private let topInset: CGFloat = 16
     private let collapsedInset: CGFloat = 8
 
@@ -279,8 +288,49 @@ struct NotchOverlayView: View {
     private let notchHeight: CGFloat = 37
     private let notchWidth: CGFloat = 200  // Hardware notch is ~200px wide
 
+    private var listeningMode: ListeningMode {
+        NotchSettings.shared.listeningMode
+    }
+
+    /// Convert fractional word index to char offset using actual word lengths
+    private func charOffsetForWordProgress(_ progress: Double) -> Int {
+        let wholeWord = Int(progress)
+        let frac = progress - Double(wholeWord)
+        var offset = 0
+        for i in 0..<min(wholeWord, words.count) {
+            offset += words[i].count + 1 // +1 for space
+        }
+        if wholeWord < words.count {
+            offset += Int(Double(words[wholeWord].count) * frac)
+        }
+        return min(offset, totalCharCount)
+    }
+
+    /// Convert char offset back to fractional word index (for taps)
+    private func wordProgressForCharOffset(_ charOffset: Int) -> Double {
+        var offset = 0
+        for (i, word) in words.enumerated() {
+            let end = offset + word.count
+            if charOffset <= end {
+                let frac = Double(charOffset - offset) / Double(max(1, word.count))
+                return Double(i) + frac
+            }
+            offset = end + 1
+        }
+        return Double(words.count)
+    }
+
+    private var effectiveCharCount: Int {
+        switch listeningMode {
+        case .wordTracking:
+            return speechRecognizer.recognizedCharCount
+        case .classic, .silencePaused:
+            return charOffsetForWordProgress(timerWordProgress)
+        }
+    }
+
     var isDone: Bool {
-        totalCharCount > 0 && speechRecognizer.recognizedCharCount >= totalCharCount
+        totalCharCount > 0 && effectiveCharCount >= totalCharCount
     }
 
     // Interpolated values based on expansion
@@ -361,6 +411,22 @@ struct NotchOverlayView: View {
                 }
             }
         }
+        .onReceive(scrollTimer) { _ in
+            guard !isDone, !isUserScrolling else { return }
+            let speed = NotchSettings.shared.scrollSpeed // words per second
+            switch listeningMode {
+            case .classic:
+                if !isPaused {
+                    timerWordProgress += speed * 0.05
+                }
+            case .silencePaused:
+                if !isPaused && speechRecognizer.isListening && speechRecognizer.isSpeaking {
+                    timerWordProgress += speed * 0.05
+                }
+            case .wordTracking:
+                break
+            }
+        }
     }
 
     private func updateFrameTracker() {
@@ -370,17 +436,38 @@ struct NotchOverlayView: View {
         frameTracker.visibleWidth = fullWidth
     }
 
+    private var isEffectivelyListening: Bool {
+        switch listeningMode {
+        case .wordTracking, .silencePaused:
+            return speechRecognizer.isListening
+        case .classic:
+            return !isPaused
+        }
+    }
+
     private var prompterView: some View {
         VStack(spacing: 0) {
             SpeechScrollView(
                 words: words,
-                highlightedCharCount: speechRecognizer.recognizedCharCount,
+                highlightedCharCount: effectiveCharCount,
                 font: NotchSettings.shared.font,
                 highlightColor: NotchSettings.shared.fontColorPreset.color,
                 onWordTap: { charOffset in
-                    speechRecognizer.jumpTo(charOffset: charOffset)
+                    if listeningMode == .wordTracking {
+                        speechRecognizer.jumpTo(charOffset: charOffset)
+                    } else {
+                        timerWordProgress = wordProgressForCharOffset(charOffset)
+                    }
                 },
-                isListening: speechRecognizer.isListening
+                onManualScroll: { scrolling, newProgress in
+                    isUserScrolling = scrolling
+                    if !scrolling {
+                        timerWordProgress = max(0, min(Double(words.count), newProgress))
+                    }
+                },
+                smoothScroll: listeningMode != .wordTracking,
+                smoothWordProgress: timerWordProgress,
+                isListening: isEffectivelyListening
             )
             .padding(.horizontal, 12)
             .padding(.top, 6)
@@ -391,33 +478,51 @@ struct NotchOverlayView: View {
                 AudioWaveformProgressView(
                     levels: speechRecognizer.audioLevels,
                     progress: totalCharCount > 0
-                        ? Double(speechRecognizer.recognizedCharCount) / Double(totalCharCount)
+                        ? Double(effectiveCharCount) / Double(totalCharCount)
                         : 0
                 )
                 .frame(width: 160, height: 24)
 
-                Text(speechRecognizer.lastSpokenText.split(separator: " ").suffix(3).joined(separator: " "))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Button {
-                    if speechRecognizer.isListening {
-                        speechRecognizer.stop()
-                    } else {
-                        speechRecognizer.resume()
-                    }
-                } label: {
-                    Image(systemName: speechRecognizer.isListening ? "mic.fill" : "mic.slash.fill")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(speechRecognizer.isListening ? .yellow.opacity(0.8) : .white.opacity(0.6))
-                        .frame(width: 24, height: 24)
-                        .background(.white.opacity(0.15))
-                        .clipShape(Circle())
+                if listeningMode == .wordTracking {
+                    Text(speechRecognizer.lastSpokenText.split(separator: " ").suffix(3).joined(separator: " "))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Spacer()
                 }
-                .buttonStyle(.plain)
+
+                if listeningMode == .classic {
+                    Button {
+                        isPaused.toggle()
+                    } label: {
+                        Image(systemName: isPaused ? "play.fill" : "pause.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(isPaused ? .white.opacity(0.6) : .yellow.opacity(0.8))
+                            .frame(width: 24, height: 24)
+                            .background(.white.opacity(0.15))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        if speechRecognizer.isListening {
+                            speechRecognizer.stop()
+                        } else {
+                            speechRecognizer.resume()
+                        }
+                    } label: {
+                        Image(systemName: speechRecognizer.isListening ? "mic.fill" : "mic.slash.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(speechRecognizer.isListening ? .yellow.opacity(0.8) : .white.opacity(0.6))
+                            .frame(width: 24, height: 24)
+                            .background(.white.opacity(0.15))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Button {
                     speechRecognizer.forceStop()
@@ -525,8 +630,64 @@ struct FloatingOverlayView: View {
 
     @State private var appeared = false
 
+    // Timer-based scroll for classic & silence-paused modes
+    @State private var timerWordProgress: Double = 0
+    @State private var isPaused: Bool = false
+    @State private var isUserScrolling: Bool = false
+    private let scrollTimer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+
+    private var listeningMode: ListeningMode {
+        NotchSettings.shared.listeningMode
+    }
+
+    /// Convert fractional word index to char offset using actual word lengths
+    private func charOffsetForWordProgress(_ progress: Double) -> Int {
+        let wholeWord = Int(progress)
+        let frac = progress - Double(wholeWord)
+        var offset = 0
+        for i in 0..<min(wholeWord, words.count) {
+            offset += words[i].count + 1
+        }
+        if wholeWord < words.count {
+            offset += Int(Double(words[wholeWord].count) * frac)
+        }
+        return min(offset, totalCharCount)
+    }
+
+    /// Convert char offset back to fractional word index (for taps)
+    private func wordProgressForCharOffset(_ charOffset: Int) -> Double {
+        var offset = 0
+        for (i, word) in words.enumerated() {
+            let end = offset + word.count
+            if charOffset <= end {
+                let frac = Double(charOffset - offset) / Double(max(1, word.count))
+                return Double(i) + frac
+            }
+            offset = end + 1
+        }
+        return Double(words.count)
+    }
+
+    private var effectiveCharCount: Int {
+        switch listeningMode {
+        case .wordTracking:
+            return speechRecognizer.recognizedCharCount
+        case .classic, .silencePaused:
+            return charOffsetForWordProgress(timerWordProgress)
+        }
+    }
+
     var isDone: Bool {
-        totalCharCount > 0 && speechRecognizer.recognizedCharCount >= totalCharCount
+        totalCharCount > 0 && effectiveCharCount >= totalCharCount
+    }
+
+    private var isEffectivelyListening: Bool {
+        switch listeningMode {
+        case .wordTracking, .silencePaused:
+            return speechRecognizer.isListening
+        case .classic:
+            return !isPaused
+        }
     }
 
     var body: some View {
@@ -576,19 +737,47 @@ struct FloatingOverlayView: View {
                 }
             }
         }
+        .onReceive(scrollTimer) { _ in
+            guard !isDone, !isUserScrolling else { return }
+            let speed = NotchSettings.shared.scrollSpeed // words per second
+            switch listeningMode {
+            case .classic:
+                if !isPaused {
+                    timerWordProgress += speed * 0.05
+                }
+            case .silencePaused:
+                if !isPaused && speechRecognizer.isListening && speechRecognizer.isSpeaking {
+                    timerWordProgress += speed * 0.05
+                }
+            case .wordTracking:
+                break
+            }
+        }
     }
 
     private var floatingPrompterView: some View {
         VStack(spacing: 0) {
             SpeechScrollView(
                 words: words,
-                highlightedCharCount: speechRecognizer.recognizedCharCount,
+                highlightedCharCount: effectiveCharCount,
                 font: NotchSettings.shared.font,
                 highlightColor: NotchSettings.shared.fontColorPreset.color,
                 onWordTap: { charOffset in
-                    speechRecognizer.jumpTo(charOffset: charOffset)
+                    if listeningMode == .wordTracking {
+                        speechRecognizer.jumpTo(charOffset: charOffset)
+                    } else {
+                        timerWordProgress = wordProgressForCharOffset(charOffset)
+                    }
                 },
-                isListening: speechRecognizer.isListening
+                onManualScroll: { scrolling, newProgress in
+                    isUserScrolling = scrolling
+                    if !scrolling {
+                        timerWordProgress = max(0, min(Double(words.count), newProgress))
+                    }
+                },
+                smoothScroll: listeningMode != .wordTracking,
+                smoothWordProgress: timerWordProgress,
+                isListening: isEffectivelyListening
             )
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -597,33 +786,51 @@ struct FloatingOverlayView: View {
                 AudioWaveformProgressView(
                     levels: speechRecognizer.audioLevels,
                     progress: totalCharCount > 0
-                        ? Double(speechRecognizer.recognizedCharCount) / Double(totalCharCount)
+                        ? Double(effectiveCharCount) / Double(totalCharCount)
                         : 0
                 )
                 .frame(width: 160, height: 24)
 
-                Text(speechRecognizer.lastSpokenText.split(separator: " ").suffix(3).joined(separator: " "))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Button {
-                    if speechRecognizer.isListening {
-                        speechRecognizer.stop()
-                    } else {
-                        speechRecognizer.resume()
-                    }
-                } label: {
-                    Image(systemName: speechRecognizer.isListening ? "mic.fill" : "mic.slash.fill")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(speechRecognizer.isListening ? .yellow.opacity(0.8) : .white.opacity(0.6))
-                        .frame(width: 24, height: 24)
-                        .background(.white.opacity(0.15))
-                        .clipShape(Circle())
+                if listeningMode == .wordTracking {
+                    Text(speechRecognizer.lastSpokenText.split(separator: " ").suffix(3).joined(separator: " "))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Spacer()
                 }
-                .buttonStyle(.plain)
+
+                if listeningMode == .classic {
+                    Button {
+                        isPaused.toggle()
+                    } label: {
+                        Image(systemName: isPaused ? "play.fill" : "pause.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(isPaused ? .white.opacity(0.6) : .yellow.opacity(0.8))
+                            .frame(width: 24, height: 24)
+                            .background(.white.opacity(0.15))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        if speechRecognizer.isListening {
+                            speechRecognizer.stop()
+                        } else {
+                            speechRecognizer.resume()
+                        }
+                    } label: {
+                        Image(systemName: speechRecognizer.isListening ? "mic.fill" : "mic.slash.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(speechRecognizer.isListening ? .yellow.opacity(0.8) : .white.opacity(0.6))
+                            .frame(width: 24, height: 24)
+                            .background(.white.opacity(0.15))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Button {
                     speechRecognizer.forceStop()

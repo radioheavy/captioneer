@@ -8,6 +8,7 @@
 import SwiftUI
 import AppKit
 import Speech
+import Combine
 
 // MARK: - Preview Panel Controller
 
@@ -16,6 +17,12 @@ class NotchPreviewController {
     private var hostingView: NSHostingView<NotchPreviewContent>?
 
     func show(settings: NotchSettings) {
+        // If panel already exists, just re-show it
+        if let panel {
+            panel.orderFront(nil)
+            return
+        }
+
         guard let screen = NSScreen.main else { return }
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
@@ -47,6 +54,10 @@ class NotchPreviewController {
         self.panel = panel
     }
 
+    func hide() {
+        panel?.orderOut(nil)
+    }
+
     func dismiss() {
         panel?.orderOut(nil)
         panel = nil
@@ -61,6 +72,9 @@ struct NotchPreviewContent: View {
     private static let loremWords = "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua Ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur Excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium totam rem aperiam eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt".split(separator: " ").map(String.init)
 
     private let highlightedCount = 42
+    @State private var previewWordProgress: Double = 0
+    private let scrollTimer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+
     // Phase 1: corners flatten (0=concave, 1=squared)
     @State private var cornerPhase: CGFloat = 0
     // Phase 2: detach from top (0=stuck to top, 1=moved down + rounded)
@@ -104,10 +118,12 @@ struct NotchPreviewContent: View {
 
                     SpeechScrollView(
                         words: Self.loremWords,
-                        highlightedCharCount: highlightedCount,
+                        highlightedCharCount: settings.listeningMode == .wordTracking ? highlightedCount : Self.loremWords.count * 5,
                         font: settings.font,
                         highlightColor: settings.fontColorPreset.color,
-                        isListening: false
+                        smoothScroll: settings.listeningMode != .wordTracking,
+                        smoothWordProgress: previewWordProgress,
+                        isListening: settings.listeningMode != .wordTracking
                     )
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
@@ -151,20 +167,34 @@ struct NotchPreviewContent: View {
             cornerPhase = isFloating ? 1 : 0
             offsetPhase = isFloating ? 1 : 0
         }
+        .onReceive(scrollTimer) { _ in
+            guard settings.listeningMode != .wordTracking else { return }
+            let wordCount = Double(Self.loremWords.count)
+            previewWordProgress += settings.scrollSpeed * 0.05
+            if previewWordProgress >= wordCount {
+                previewWordProgress = 0
+            }
+        }
+        .onChange(of: settings.listeningMode) { _, mode in
+            if mode != .wordTracking {
+                previewWordProgress = 0
+            }
+        }
     }
 }
 
 // MARK: - Settings Tabs
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, fontSize, fontColor, overlayMode, externalDisplay
+    case general, listeningMode, font, fontColor, overlayMode, externalDisplay
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .general: return "General"
-        case .fontSize: return "Font Size"
+        case .general: return "Size"
+        case .listeningMode: return "Guidance"
+        case .font: return "Font"
         case .fontColor: return "Color"
         case .overlayMode: return "Overlay"
         case .externalDisplay: return "Display"
@@ -173,8 +203,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .general: return "slider.horizontal.3"
-        case .fontSize: return "textformat.size"
+        case .general: return "arrow.up.left.and.arrow.down.right"
+        case .listeningMode: return "waveform"
+        case .font: return "textformat"
         case .fontColor: return "paintpalette"
         case .overlayMode: return "macwindow"
         case .externalDisplay: return "rectangle.on.rectangle"
@@ -188,7 +219,7 @@ struct SettingsView: View {
     @Bindable var settings: NotchSettings
     @Environment(\.dismiss) private var dismiss
     @State private var previewController = NotchPreviewController()
-    @State private var selectedTab: SettingsTab = .general
+    @State private var selectedTab: SettingsTab = .listeningMode
 
     var body: some View {
         HStack(spacing: 0) {
@@ -228,12 +259,15 @@ struct SettingsView: View {
                     settings.notchWidth = NotchSettings.defaultWidth
                     settings.textAreaHeight = NotchSettings.defaultHeight
                     settings.fontSizePreset = .lg
+                    settings.fontFamilyPreset = .sans
                     settings.fontColorPreset = .white
                     settings.overlayMode = .pinned
                     settings.floatingGlassEffect = false
                     settings.glassOpacity = 0.15
                     settings.externalDisplayMode = .off
                     settings.externalScreenID = 0
+                    settings.listeningMode = .wordTracking
+                    settings.scrollSpeed = 3
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -252,8 +286,10 @@ struct SettingsView: View {
                     switch selectedTab {
                     case .general:
                         generalTab
-                    case .fontSize:
-                        fontSizeTab
+                    case .listeningMode:
+                        listeningModeTab
+                    case .font:
+                        fontTab
                     case .fontColor:
                         fontColorTab
                     case .overlayMode:
@@ -288,6 +324,12 @@ struct SettingsView: View {
         }
         .onDisappear {
             previewController.dismiss()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            previewController.hide()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            previewController.show(settings: settings)
         }
     }
 
@@ -329,25 +371,111 @@ struct SettingsView: View {
                 )
             }
 
-            // Language picker
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Speech Language")
-                    .font(.system(size: 13, weight: .medium))
-                Picker("", selection: $settings.speechLocale) {
-                    ForEach(SFSpeechRecognizer.supportedLocales().sorted(by: { $0.identifier < $1.identifier }), id: \.identifier) { locale in
-                        Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
-                            .tag(locale.identifier)
+        }
+    }
+
+    // MARK: - Listening Mode Tab
+
+    private var listeningModeTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Picker("", selection: $settings.listeningMode) {
+                ForEach(ListeningMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            Text(settings.listeningMode.description)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            if settings.listeningMode == .wordTracking {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Speech Language")
+                        .font(.system(size: 13, weight: .medium))
+                    Picker("", selection: $settings.speechLocale) {
+                        ForEach(SFSpeechRecognizer.supportedLocales().sorted(by: { $0.identifier < $1.identifier }), id: \.identifier) { locale in
+                            Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
+                                .tag(locale.identifier)
+                        }
+                    }
+                    .labelsHidden()
+                }
+            }
+
+            if settings.listeningMode != .wordTracking {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Scroll Speed")
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Text(String(format: "%.1f words/s", settings.scrollSpeed))
+                            .font(.system(size: 12, weight: .regular, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(
+                        value: $settings.scrollSpeed,
+                        in: 0.5...8,
+                        step: 0.5
+                    )
+                    HStack {
+                        Text("Slower")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                        Spacer()
+                        Text("Faster")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
                     }
                 }
-                .labelsHidden()
             }
         }
     }
 
-    // MARK: - Font Size Tab
+    // MARK: - Font Tab
 
-    private var fontSizeTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private var fontTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Font Family")
+                .font(.system(size: 13, weight: .medium))
+
+            HStack(spacing: 8) {
+                ForEach(FontFamilyPreset.allCases) { preset in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            settings.fontFamilyPreset = preset
+                        }
+                    } label: {
+                        VStack(spacing: 6) {
+                            Text("Ag")
+                                .font(Font(preset.font(size: 16)))
+                                .foregroundStyle(settings.fontFamilyPreset == preset ? Color.accentColor : .primary)
+                            Text(preset.label)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(settings.fontFamilyPreset == preset ? Color.accentColor : .secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(settings.fontFamilyPreset == preset ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(settings.fontFamilyPreset == preset ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Divider()
+
             Text("Text Size")
                 .font(.system(size: 13, weight: .medium))
 
@@ -360,7 +488,7 @@ struct SettingsView: View {
                     } label: {
                         VStack(spacing: 6) {
                             Text("Ag")
-                                .font(.system(size: preset.pointSize * 0.7, weight: .semibold))
+                                .font(Font(settings.fontFamilyPreset.font(size: preset.pointSize * 0.7)))
                                 .foregroundStyle(settings.fontSizePreset == preset ? Color.accentColor : .primary)
                             Text(preset.label)
                                 .font(.system(size: 11, weight: .medium))

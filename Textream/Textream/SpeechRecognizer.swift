@@ -18,15 +18,25 @@ class SpeechRecognizer {
     var lastSpokenText: String = ""
     var shouldDismiss: Bool = false
 
+    /// True when recent audio levels indicate the user is actively speaking
+    var isSpeaking: Bool {
+        let recent = audioLevels.suffix(10)
+        guard !recent.isEmpty else { return false }
+        let avg = recent.reduce(0, +) / CGFloat(recent.count)
+        return avg > 0.08
+    }
+
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
-    private let audioEngine = AVAudioEngine()
+    private var audioEngine = AVAudioEngine()
     private var sourceText: String = ""
     private var normalizedSource: String = ""
     private var matchStartOffset: Int = 0  // char offset to start matching from
     private var retryCount: Int = 0
     private let maxRetries: Int = 10
+    private var configurationChangeObserver: Any?
+    private var pendingRestart: DispatchWorkItem?
 
     /// Jump highlight to a specific char offset (e.g. when user taps a word)
     func jumpTo(charOffset: Int) {
@@ -39,6 +49,10 @@ class SpeechRecognizer {
     }
 
     func start(with text: String) {
+        // Clean up any previous session immediately so pending restarts
+        // and stale taps are removed before the async auth callback fires.
+        cleanupRecognition()
+
         let collapsed = text.components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
@@ -81,22 +95,45 @@ class SpeechRecognizer {
     }
 
     private func cleanupRecognition() {
+        // Cancel any pending restart to prevent overlapping beginRecognition calls
+        pendingRestart?.cancel()
+        pendingRestart = nil
+
+        if let observer = configurationChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configurationChangeObserver = nil
+        }
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+        recognitionTask?.cancel()
+        recognitionTask = nil
         if audioEngine.isRunning {
             audioEngine.stop()
         }
         audioEngine.inputNode.removeTap(onBus: 0)
-        recognitionRequest?.endAudio()
-        recognitionTask?.cancel()
-        recognitionRequest = nil
-        recognitionTask = nil
+    }
+
+    /// Coalesces all delayed beginRecognition() calls into a single pending work item.
+    /// Any previously scheduled restart is cancelled before the new one is queued.
+    private func scheduleBeginRecognition(after delay: TimeInterval) {
+        pendingRestart?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingRestart = nil
+            self.beginRecognition()
+        }
+        pendingRestart = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func beginRecognition() {
         // Ensure clean state
         cleanupRecognition()
 
-        // Reset the audio engine to force re-acquiring the input device
-        audioEngine.reset()
+        // Create a fresh engine so it picks up the current hardware format.
+        // AVAudioEngine caches the device format internally and reset() alone
+        // does not reliably flush it after a mic switch.
+        audioEngine = AVAudioEngine()
 
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: NotchSettings.shared.speechLocale))
         guard let speechRecognizer, speechRecognizer.isAvailable else {
@@ -111,7 +148,33 @@ class SpeechRecognizer {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+        // Guard against invalid format during device transitions (e.g. mic switch)
+        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+            // Retry after a short delay to let the audio system settle
+            if retryCount < maxRetries {
+                retryCount += 1
+                scheduleBeginRecognition(after: 0.3)
+            } else {
+                error = "Audio input unavailable"
+                isListening = false
+            }
+            return
+        }
+
+        // Observe audio configuration changes (e.g. mic switched) to restart gracefully
+        configurationChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: audioEngine,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, !self.sourceText.isEmpty else { return }
+            self.restartRecognition()
+        }
+
+        // Belt-and-suspenders: ensure no stale tap exists before installing
+        inputNode.removeTap(onBus: 0)
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
             recognitionRequest.append(buffer)
 
             guard let channelData = buffer.floatChannelData?[0] else { return }
@@ -143,13 +206,12 @@ class SpeechRecognizer {
             }
             if error != nil {
                 DispatchQueue.main.async {
+                    // If recognitionRequest is nil, cleanup already ran (intentional cancel) — don't retry
+                    guard self.recognitionRequest != nil else { return }
                     if self.isListening && !self.shouldDismiss && !self.sourceText.isEmpty && self.retryCount < self.maxRetries {
                         self.retryCount += 1
                         let delay = min(Double(self.retryCount) * 0.5, 1.5)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                            guard let self, self.isListening else { return }
-                            self.beginRecognition()
-                        }
+                        self.scheduleBeginRecognition(after: delay)
                     } else {
                         self.isListening = false
                     }
@@ -162,17 +224,24 @@ class SpeechRecognizer {
             try audioEngine.start()
             isListening = true
         } catch {
-            self.error = "Audio engine failed: \(error.localizedDescription)"
-            isListening = false
+            // Transient failure after a device switch — retry
+            if retryCount < maxRetries {
+                retryCount += 1
+                scheduleBeginRecognition(after: 0.3)
+            } else {
+                self.error = "Audio engine failed: \(error.localizedDescription)"
+                isListening = false
+            }
         }
     }
 
     private func restartRecognition() {
-        // Small delay to let the audio system fully release
+        // Reset retries so the fresh engine gets a full set of attempts
+        retryCount = 0
+        isListening = true
+        // Longer delay to let the audio system fully settle after a device change
         cleanupRecognition()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.beginRecognition()
-        }
+        scheduleBeginRecognition(after: 0.5)
     }
 
     // MARK: - Fuzzy character-level matching

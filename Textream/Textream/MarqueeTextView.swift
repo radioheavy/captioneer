@@ -33,12 +33,20 @@ struct SpeechScrollView: View {
     var font: NSFont = .systemFont(ofSize: 18, weight: .semibold)
     var highlightColor: Color = .white
     var onWordTap: ((Int) -> Void)? = nil
+    /// Called when user starts/stops manual scrolling in smooth mode.
+    /// Bool: true = scrolling started (pause timer), false = scrolling ended (resume timer).
+    /// Double: new word progress to resume from (only meaningful when false).
+    var onManualScroll: ((Bool, Double) -> Void)? = nil
+    var smoothScroll: Bool = false
+    /// Continuous word progress (e.g. 3.7 = 70% through 4th word). Drives scroll in smooth mode.
+    var smoothWordProgress: Double = 0
 
     var isListening: Bool = true
     @State private var scrollOffset: CGFloat = 0
     @State private var manualOffset: CGFloat = 0
     @State private var wordYPositions: [Int: CGFloat] = [:]
     @State private var containerHeight: CGFloat = 0
+    @State private var isUserScrolling: Bool = false
 
     var body: some View {
         GeometryReader { geo in
@@ -47,6 +55,7 @@ struct SpeechScrollView: View {
                 highlightedCharCount: highlightedCharCount,
                 font: font,
                 highlightColor: highlightColor,
+                highlightWords: !smoothScroll,
                 containerWidth: geo.size.width,
                 onWordTap: { charOffset in
                     manualOffset = 0
@@ -61,7 +70,7 @@ struct SpeechScrollView: View {
                 wordYPositions = positions
             }
             .offset(y: scrollOffset + manualOffset)
-            .animation(.easeOut(duration: 0.5), value: scrollOffset)
+            .animation(smoothScroll ? .linear(duration: 0.06) : .easeOut(duration: 0.5), value: scrollOffset)
             .animation(.easeOut(duration: 0.15), value: manualOffset)
             .onChange(of: geo.size.height) { _, newHeight in
                 containerHeight = newHeight
@@ -70,7 +79,13 @@ struct SpeechScrollView: View {
                 }
             }
             .onChange(of: highlightedCharCount) { _, _ in
-                if isListening {
+                if isListening && !smoothScroll {
+                    manualOffset = 0
+                    recalcCenter(containerHeight: containerHeight)
+                }
+            }
+            .onChange(of: smoothWordProgress) { _, _ in
+                if isListening && smoothScroll {
                     manualOffset = 0
                     recalcCenter(containerHeight: containerHeight)
                 }
@@ -87,7 +102,15 @@ struct SpeechScrollView: View {
             .overlay(
                 ScrollWheelView(
                     onScroll: { delta in
-                        guard !isListening else { return }
+                        let canScroll = smoothScroll ? isListening : !isListening
+                        guard canScroll else { return }
+
+                        // Pause timer when user starts scrolling in smooth mode
+                        if smoothScroll && !isUserScrolling {
+                            isUserScrolling = true
+                            onManualScroll?(true, 0)
+                        }
+
                         let maxY = wordYPositions.values.max() ?? 0
                         let containerHeight = geo.size.height
                         let maxUp = containerHeight * 0.5
@@ -108,14 +131,24 @@ struct SpeechScrollView: View {
                         }
                     },
                     onScrollEnd: {
-                        let maxY = wordYPositions.values.max() ?? 0
-                        let containerHeight = geo.size.height
-                        let upperBound = containerHeight * 0.5
-                        let lowerBound = -max(0, maxY - containerHeight * 0.5)
+                        if smoothScroll && isUserScrolling {
+                            // Find the word at the new visual center
+                            let newProgress = wordProgressAtCurrentOffset()
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                manualOffset = 0
+                            }
+                            isUserScrolling = false
+                            onManualScroll?(false, newProgress)
+                        } else {
+                            let maxY = wordYPositions.values.max() ?? 0
+                            let containerHeight = geo.size.height
+                            let upperBound = containerHeight * 0.5
+                            let lowerBound = -max(0, maxY - containerHeight * 0.5)
 
-                        if manualOffset > upperBound || manualOffset < lowerBound {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                manualOffset = min(upperBound, max(lowerBound, manualOffset))
+                            if manualOffset > upperBound || manualOffset < lowerBound {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    manualOffset = min(upperBound, max(lowerBound, manualOffset))
+                                }
                             }
                         }
                     }
@@ -138,15 +171,56 @@ struct SpeechScrollView: View {
     }
 
     private func recalcCenter(containerHeight: CGFloat) {
-        let wordIdx = activeWordIndex()
-        if let wordY = wordYPositions[wordIdx] {
-            let center = containerHeight * 0.5
-            let target = center - wordY
-            // Only update if it actually changed to avoid redundant animations
-            if abs(scrollOffset - target) > 1 {
-                scrollOffset = target
+        let center = containerHeight * 0.5
+
+        if smoothScroll {
+            // Use continuous word progress for jitter-free scrolling
+            let wordIdx = Int(smoothWordProgress)
+            let fraction = smoothWordProgress - Double(wordIdx)
+            let clampedIdx = max(0, min(wordIdx, words.count - 1))
+            guard let wordY = wordYPositions[clampedIdx] else { return }
+            let nextY = wordYPositions[clampedIdx + 1] ?? wordY
+            let interpolatedY = wordY + (nextY - wordY) * CGFloat(fraction)
+            scrollOffset = center - interpolatedY
+        } else {
+            let wordIdx = activeWordIndex()
+            if let wordY = wordYPositions[wordIdx] {
+                let target = center - wordY
+                // Only update if it actually changed to avoid redundant animations
+                if abs(scrollOffset - target) > 1 {
+                    scrollOffset = target
+                }
             }
         }
+    }
+
+    /// Find the word progress at the current visual position (scrollOffset + manualOffset)
+    private func wordProgressAtCurrentOffset() -> Double {
+        let center = containerHeight * 0.5
+        // The Y position currently at the center of the view
+        let targetY = center - (scrollOffset + manualOffset)
+
+        // Find the closest word and interpolate
+        let sorted = wordYPositions.sorted { $0.key < $1.key }
+        guard !sorted.isEmpty else { return smoothWordProgress }
+
+        for i in 0..<sorted.count {
+            let (wordIdx, wordY) = sorted[i]
+            if i + 1 < sorted.count {
+                let (_, nextY) = sorted[i + 1]
+                if targetY >= wordY && targetY <= nextY {
+                    let frac = (nextY - wordY) > 0 ? Double(targetY - wordY) / Double(nextY - wordY) : 0
+                    return Double(wordIdx) + frac
+                }
+            } else if targetY >= wordY {
+                return Double(wordIdx)
+            }
+        }
+        // If scrolled above all words, return 0
+        if targetY < (sorted.first?.value ?? 0) {
+            return 0
+        }
+        return Double(words.count)
     }
 
     private func activeWordIndex() -> Int {
@@ -158,6 +232,21 @@ struct SpeechScrollView: View {
         }
         return max(0, words.count - 1)
     }
+
+    /// Returns (wordIndex, fractionThroughWord) for smooth interpolation
+    private func activeWordFraction() -> (Int, Double) {
+        var offset = 0
+        for (i, word) in words.enumerated() {
+            let end = offset + word.count
+            if highlightedCharCount <= end {
+                let wordLen = max(1, word.count)
+                let into = highlightedCharCount - offset
+                return (i, Double(into) / Double(wordLen))
+            }
+            offset = end + 1
+        }
+        return (max(0, words.count - 1), 1.0)
+    }
 }
 
 // MARK: - Word Flow Layout
@@ -167,6 +256,7 @@ struct WordFlowLayout: View {
     let highlightedCharCount: Int
     let font: NSFont
     var highlightColor: Color = .white
+    var highlightWords: Bool = true
     let containerWidth: CGFloat
     var onWordTap: ((Int) -> Void)? = nil
 
@@ -210,6 +300,29 @@ struct WordFlowLayout: View {
         let letterCount = max(1, item.word.filter { $0.isLetter || $0.isNumber }.count)
         let isFullyLit = litCount >= letterCount
         let isCurrentWord = isNextWord || (charsIntoWord >= 0 && !isFullyLit)
+
+        // When highlighting is off (classic/silence-paused), use uniform color
+        if !highlightWords {
+            let uniformColor: Color = item.isAnnotation
+                ? Color.white.opacity(0.4)
+                : highlightColor
+
+            return Text(item.word + " ")
+                .font(item.isAnnotation ? Font(font).italic() : Font(font))
+                .foregroundStyle(uniformColor)
+                .background(
+                    GeometryReader { wordGeo in
+                        Color.clear.preference(
+                            key: WordYPreferenceKey.self,
+                            value: [item.id: wordGeo.frame(in: .named("flowLayout")).midY]
+                        )
+                    }
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onWordTap?(item.charOffset)
+                }
+        }
 
         // Annotations: italic, always dimmed
         if item.isAnnotation {

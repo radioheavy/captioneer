@@ -76,9 +76,11 @@ Happy presenting! [wave]
                     showSettings = true
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "mic.fill")
+                        Image(systemName: NotchSettings.shared.listeningMode.icon)
                             .font(.system(size: 10))
-                        Text(languageLabel)
+                        Text(NotchSettings.shared.listeningMode == .wordTracking
+                             ? languageLabel
+                             : NotchSettings.shared.listeningMode.label)
                             .font(.system(size: 11, weight: .medium))
                             .lineLimit(1)
                     }

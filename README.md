@@ -5,7 +5,7 @@
 <h1 align="center">Textream</h1>
 
 <p align="center">
-  <strong>A free macOS teleprompter that highlights your script in real-time as you speak.</strong>
+  <strong>A free macOS teleprompter with real-time word tracking, classic auto-scroll, and voice-activated scrolling.</strong>
 </p>
 
 <p align="center">
@@ -24,9 +24,9 @@
 
 ## What is Textream?
 
-Textream is a free, open-source macOS app that listens to your voice and highlights your script in real-time. It displays your text in a sleek **Dynamic Island-style overlay** at the top of your screen, a **draggable floating window**, or **fullscreen on a Sidecar iPad** — visible only to you, invisible to your audience.
+Textream is a free, open-source macOS app that guides you through your script with three modes: **word tracking** (highlights each word as you say it), **classic** (constant-speed auto-scroll), and **voice-activated** (scrolls while you speak, pauses when you're silent). It displays your text in a sleek **Dynamic Island-style overlay** at the top of your screen, a **draggable floating window**, or **fullscreen on a Sidecar iPad** — visible only to you, invisible to your audience.
 
-Paste your script, hit play, and start speaking. Words light up as you say them. When you're done, the overlay closes automatically.
+Paste your script, hit play, and start speaking. When you're done, the overlay closes automatically.
 
 ## Download
 
@@ -52,17 +52,34 @@ Then right-click the app → **Open**. After the first launch, macOS remembers y
 
 ## Features
 
-- **Real-time voice tracking** — On-device speech recognition highlights words as you say them. No cloud, no latency, works offline.
-- **Dynamic Island overlay** — A notch-shaped floating overlay at the top of your screen, inspired by the MacBook Dynamic Island. Sits above all apps.
+### Guidance Modes
+
+- **Word Tracking** (default) — On-device speech recognition highlights words as you say them. No cloud, no latency, works offline. Supports dozens of languages.
+- **Classic** — Auto-scrolls at a constant speed. No microphone needed. Adjust scroll speed with a slider.
+- **Voice-Activated** — Scrolls while you speak, pauses when you're silent or muted. Perfect for natural pacing.
+- **Mouse scroll to catch up** — In Classic and Voice-Activated modes, scroll with your mouse to jump ahead or back. The timer pauses while you scroll and resumes from the new position.
+
+### Display
+
+- **Dynamic Island overlay** — A notch-shaped overlay at the top of your screen, inspired by the MacBook Dynamic Island. Sits above all apps.
 - **Floating window mode** — Switch from the pinned notch to a draggable floating window you can place anywhere on screen.
 - **Glass effect** — Enable a translucent frosted glass background for the floating window with adjustable opacity.
 - **External display / Sidecar** — Show a fullscreen teleprompter on an external display or Sidecar iPad. Includes a mirror mode for use with prompter mirror rigs.
-- **Font customization** — Choose from font size presets (S, M, L, XL) and color presets (white, yellow, blue, green, pink).
+- **Adjustable size** — Resize the overlay width and text height from Settings (⌘,) to fit your screen.
+
+### Customization
+
+- **Font family** — Choose from Sans, Serif, Mono, or a dyslexia-friendly OpenDyslexic font.
+- **Font size** — Four size presets: XS, SM, LG, XL.
+- **Highlight color** — Six color presets: white, yellow, green, blue, pink, orange.
+- **Scroll speed** — Adjustable words-per-second for Classic and Voice-Activated modes (0.5–8 w/s).
+- **Language selection** — Choose your preferred speech recognition language for Word Tracking mode.
+
+### Other
+
 - **Live waveform** — Visual voice activity indicator so you always know the mic is picking you up.
 - **Tap to jump** — Tap any word in the overlay to jump the tracker to that position.
 - **Pause & resume** — Go off-script, take a break, come back. The tracker picks up where you left off.
-- **Adjustable size** — Resize the overlay width and text height from Settings (⌘,) to fit your screen.
-- **Language selection** — Choose your preferred speech recognition language. The current language is shown in the title bar.
 - **Completely private** — All processing happens on-device. No accounts, no tracking, no data leaves your Mac.
 - **Open source** — MIT licensed. Contributions welcome.
 

@@ -33,6 +33,60 @@ enum FontSizePreset: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Font Family Preset
+
+enum FontFamilyPreset: String, CaseIterable, Identifiable {
+    case sans, serif, mono, dyslexia
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .sans:     return "Sans"
+        case .serif:    return "Serif"
+        case .mono:     return "Mono"
+        case .dyslexia: return "Dyslexia"
+        }
+    }
+
+    var sampleText: String {
+        switch self {
+        case .sans:     return "Aa"
+        case .serif:    return "Aa"
+        case .mono:     return "Aa"
+        case .dyslexia: return "Aa"
+        }
+    }
+
+    func font(size: CGFloat, weight: NSFont.Weight = .semibold) -> NSFont {
+        let base = NSFont.systemFont(ofSize: size, weight: weight)
+        let descriptor = base.fontDescriptor
+        switch self {
+        case .sans:
+            return base
+        case .serif:
+            if let designed = descriptor.withDesign(.serif) {
+                return NSFont(descriptor: designed, size: size) ?? base
+            }
+            return base
+        case .mono:
+            if let designed = descriptor.withDesign(.monospaced) {
+                return NSFont(descriptor: designed, size: size) ?? base
+            }
+            return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        case .dyslexia:
+            if let dyslexicFont = NSFont(name: "OpenDyslexic3", size: size) {
+                return dyslexicFont
+            }
+            // Fallback to rounded system font if OpenDyslexic not available
+            if let designed = descriptor.withDesign(.rounded) {
+                return NSFont(descriptor: designed, size: size) ?? base
+            }
+            return base
+        }
+    }
+}
+
 // MARK: - Font Color Preset
 
 enum FontColorPreset: String, CaseIterable, Identifiable {
@@ -116,6 +170,38 @@ enum ExternalDisplayMode: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Listening Mode
+
+enum ListeningMode: String, CaseIterable, Identifiable {
+    case wordTracking, classic, silencePaused
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .classic:        return "Classic"
+        case .silencePaused:  return "Voice-Activated"
+        case .wordTracking:   return "Word Tracking"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .classic:        return "Auto-scrolls at a constant speed. No microphone needed."
+        case .silencePaused:  return "Scrolls while you speak, pauses when you're silent."
+        case .wordTracking:   return "Tracks each word you say and highlights it in real time."
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .classic:        return "arrow.down.circle"
+        case .silencePaused:  return "waveform.circle"
+        case .wordTracking:   return "text.word.spacing"
+        }
+    }
+}
+
 // MARK: - Settings
 
 @Observable
@@ -135,6 +221,10 @@ class NotchSettings {
 
     var fontSizePreset: FontSizePreset {
         didSet { UserDefaults.standard.set(fontSizePreset.rawValue, forKey: "fontSizePreset") }
+    }
+
+    var fontFamilyPreset: FontFamilyPreset {
+        didSet { UserDefaults.standard.set(fontFamilyPreset.rawValue, forKey: "fontFamilyPreset") }
     }
 
     var fontColorPreset: FontColorPreset {
@@ -161,8 +251,17 @@ class NotchSettings {
         didSet { UserDefaults.standard.set(Int(externalScreenID), forKey: "externalScreenID") }
     }
 
+    var listeningMode: ListeningMode {
+        didSet { UserDefaults.standard.set(listeningMode.rawValue, forKey: "listeningMode") }
+    }
+
+    /// Words per second for classic and silence-paused modes
+    var scrollSpeed: Double {
+        didSet { UserDefaults.standard.set(scrollSpeed, forKey: "scrollSpeed") }
+    }
+
     var font: NSFont {
-        .systemFont(ofSize: fontSizePreset.pointSize, weight: .semibold)
+        fontFamilyPreset.font(size: fontSizePreset.pointSize)
     }
 
     static let defaultWidth: CGFloat = 340
@@ -181,6 +280,7 @@ class NotchSettings {
         self.textAreaHeight = savedHeight > 0 ? CGFloat(savedHeight) : Self.defaultHeight
         self.speechLocale = UserDefaults.standard.string(forKey: "speechLocale") ?? Self.defaultLocale
         self.fontSizePreset = FontSizePreset(rawValue: UserDefaults.standard.string(forKey: "fontSizePreset") ?? "") ?? .lg
+        self.fontFamilyPreset = FontFamilyPreset(rawValue: UserDefaults.standard.string(forKey: "fontFamilyPreset") ?? "") ?? .sans
         self.fontColorPreset = FontColorPreset(rawValue: UserDefaults.standard.string(forKey: "fontColorPreset") ?? "") ?? .white
         self.overlayMode = OverlayMode(rawValue: UserDefaults.standard.string(forKey: "overlayMode") ?? "") ?? .pinned
         self.floatingGlassEffect = UserDefaults.standard.object(forKey: "floatingGlassEffect") as? Bool ?? false
@@ -189,5 +289,8 @@ class NotchSettings {
         self.externalDisplayMode = ExternalDisplayMode(rawValue: UserDefaults.standard.string(forKey: "externalDisplayMode") ?? "") ?? .off
         let savedScreenID = UserDefaults.standard.integer(forKey: "externalScreenID")
         self.externalScreenID = UInt32(savedScreenID)
+        self.listeningMode = ListeningMode(rawValue: UserDefaults.standard.string(forKey: "listeningMode") ?? "") ?? .wordTracking
+        let savedSpeed = UserDefaults.standard.double(forKey: "scrollSpeed")
+        self.scrollSpeed = savedSpeed > 0 ? savedSpeed : 3
     }
 }
