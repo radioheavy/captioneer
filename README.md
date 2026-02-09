@@ -42,6 +42,21 @@ Then in Xcode:
 2. Run (`Cmd+R`)
 3. Grant `Microphone` and `Speech Recognition` permissions
 
+## Install with Homebrew
+
+After the first GitHub release is published:
+
+```bash
+brew tap radioheavy/captioneer
+brew install --cask captioneer
+```
+
+If macOS blocks first launch:
+
+```bash
+xattr -cr /Applications/Captioneer.app
+```
+
 ## What Captioneer Does
 
 1. Captures microphone audio

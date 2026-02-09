@@ -1,9 +1,9 @@
-name: Build & Release
+name: Build & Release Captioneer
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -14,8 +14,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get version from tag
         id: version
@@ -25,23 +23,23 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "number=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Update app version in Xcode project
+      - name: Update app version in project
         run: |
-          sed -i '' "s/MARKETING_VERSION = .*;/MARKETING_VERSION = ${{ steps.version.outputs.number }};/g" Textream/Textream.xcodeproj/project.pbxproj
+          sed -i '' "s/MARKETING_VERSION = .*;/MARKETING_VERSION = ${{ steps.version.outputs.number }};/g" CaptioneerStandalone/Captioneer.xcodeproj/project.pbxproj
 
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Textream/Textream.xcodeproj/project.pbxproj
+          git add CaptioneerStandalone/Captioneer.xcodeproj/project.pbxproj
           git commit -m "Bump version to ${{ steps.version.outputs.number }}" || echo "No changes to commit"
-          git push origin HEAD:refs/heads/main || echo "Push skipped"
+          git push origin HEAD:refs/heads/master || echo "Push skipped"
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
 
-      - name: Build universal app
-        working-directory: Textream
+      - name: Build universal app + DMG
+        working-directory: CaptioneerStandalone
         run: |
           chmod +x build.sh
           ./build.sh
@@ -49,70 +47,27 @@ jobs:
       - name: Upload DMG to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Textream/build/release/Textream.dmg
-          name: Textream ${{ steps.version.outputs.tag }}
+          files: CaptioneerStandalone/build/release/Captioneer.dmg
+          name: Captioneer ${{ steps.version.outputs.tag }}
           draft: false
           prerelease: false
           generate_release_notes: true
           body: |
             ## Installation
 
-            1. Download **Textream.dmg** below
-            2. Open the DMG and drag **Textream** to Applications
-            3. Since the app is not notarized, macOS may block it on first launch. Run the following command in Terminal to fix this:
+            ### Homebrew
 
-            ```
-            xattr -cr /Applications/Textream.app
-            ```
-
-            Then open Textream normally.
-
-            Or install via Homebrew:
-
-            ```
-            brew install f/textream/textream
+            ```bash
+            brew tap radioheavy/captioneer
+            brew install --cask captioneer
             ```
 
-      - name: Compute DMG SHA256
-        id: sha
-        run: echo "sha256=$(shasum -a 256 Textream/build/release/Textream.dmg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+            ### Manual
 
-      - name: Update Homebrew Cask tap
-        env:
-          TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
-          VERSION: ${{ steps.version.outputs.tag }}
-          SHA256: ${{ steps.sha.outputs.sha256 }}
-        run: |
-          VERSION_NUM="${VERSION#v}"
-          git clone https://x-access-token:${TAP_REPO_TOKEN}@github.com/f/homebrew-textream.git tap
-          mkdir -p tap/Casks
-          cat > tap/Casks/textream.rb << EOF
-          cask "textream" do
-            version "${VERSION_NUM}"
-            sha256 "${SHA256}"
+            1. Download **Captioneer.dmg**
+            2. Open and drag **Captioneer.app** to Applications
+            3. If macOS blocks first launch, run:
 
-            url "https://github.com/f/textream/releases/download/${VERSION}/Textream.dmg"
-            name "Textream"
-            desc "macOS teleprompter that highlights your script in real-time as you speak"
-            homepage "https://github.com/f/textream"
-
-            depends_on macos: ">= :sequoia"
-
-            app "Textream.app"
-
-            postflight do
-              system_command "/usr/bin/xattr", args: ["-cr", "#{appdir}/Textream.app"]
-            end
-
-            zap trash: [
-              "~/Library/Preferences/dev.fka.Textream.plist",
-              "~/Library/Saved Application State/dev.fka.Textream.savedState",
-            ]
-          end
-          EOF
-          cd tap
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Update Textream to ${VERSION}"
-          git push
+            ```bash
+            xattr -cr /Applications/Captioneer.app
+            ```
