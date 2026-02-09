@@ -196,4 +196,9 @@ MIT
 
 ## Thanks
 
-Special thanks to the original Textream creator and maintainer for the foundation and inspiration that made Captioneer possible.
+Special thanks to **Fatih Kadir Akin** for creating and maintaining the original Textream project:
+
+- Original project: [f/textream](https://github.com/f/textream)
+- Maintainer: [@f](https://github.com/f)
+
+Captioneer is built with respect to that foundation and inspiration.
