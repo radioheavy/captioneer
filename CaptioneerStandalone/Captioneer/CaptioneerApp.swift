@@ -51,11 +51,11 @@ struct CaptioneerApp: App {
     var body: some Scene {
         WindowGroup("Captioneer") {
             CaptioneerHomeView(runtime: runtime)
-                .frame(minWidth: 560, minHeight: 650)
+                .frame(minWidth: 760, minHeight: 760)
                 .modifier(CaptionTranslationBridge(runtime: runtime))
         }
         .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
+        .windowResizability(.automatic)
 
         MenuBarExtra(
             "Captioneer",
@@ -69,77 +69,212 @@ struct CaptioneerApp: App {
 }
 
 private struct CaptioneerHomeView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Bindable var runtime: CaptioneerRuntime
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header
+        ZStack {
+            LinearGradient(colors: [baseBackgroundTop, baseBackgroundBottom],
+                           startPoint: .top,
+                           endPoint: .bottom)
+            .ignoresSafeArea()
 
-            if let error = runtime.engine.errorMessage {
-                Text(error)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.red)
-            }
-
-            GroupBox("Live Translation") {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        if runtime.engine.lines.isEmpty {
-                            Text("No translated caption yet.")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(runtime.engine.lines) { line in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(line.translatedText)
-                                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                    Text(line.sourceText)
-                                        .font(.system(size: 12, weight: .regular, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    controlBar
+                    liveCard
+                    settingsCard
                 }
-                .frame(minHeight: 140, maxHeight: 220)
-            }
-
-            GroupBox("Settings") {
-                CaptioneerSettingsView(settings: runtime.settings) {
-                    runtime.refreshOverlayLayout()
-                }
-                .frame(maxHeight: 420)
+                .padding(20)
             }
         }
-        .padding(18)
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.cyan.opacity(0.10))
+                    .frame(width: 46, height: 46)
+
+                Image(systemName: "captions.bubble.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.teal)
+            }
+
             VStack(alignment: .leading, spacing: 4) {
                 Text("Captioneer")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
 
                 Text("On-device live transcription + translation for overlays and OBS")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
+            statusPill(
+                title: runtime.engine.isListening ? "Listening" : "Idle",
+                color: runtime.engine.isListening ? .green : .gray,
+                systemImage: runtime.engine.isListening ? "waveform" : "pause.circle"
+            )
+        }
+    }
+
+    private var controlBar: some View {
+        HStack(spacing: 10) {
             Button {
                 runtime.toggle()
             } label: {
-                Label(runtime.engine.isListening ? "Stop" : "Start", systemImage: runtime.engine.isListening ? "stop.fill" : "play.fill")
-                    .frame(minWidth: 92)
+                Label(runtime.engine.isListening ? "Stop Capture" : "Start Capture", systemImage: runtime.engine.isListening ? "stop.fill" : "play.fill")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .frame(minWidth: 160, minHeight: 42)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(runtime.engine.isListening ? Color.red.opacity(0.88) : Color.teal.opacity(0.88))
+            )
+            .foregroundStyle(.white)
 
             Button("Clear") {
                 runtime.engine.clearOutput()
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
+            .font(.system(size: 14, weight: .semibold, design: .rounded))
+            .frame(minWidth: 96, minHeight: 42)
+            .background(secondaryButtonBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .foregroundStyle(secondaryButtonForeground)
+
+            Spacer()
+
+            statusPill(title: runtime.settings.sourceLanguageLabel, color: .blue, systemImage: "mic.fill")
+            statusPill(title: runtime.settings.targetLanguageLabel, color: .teal, systemImage: "globe")
         }
+    }
+
+    private var liveCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Live Translation")
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary.opacity(0.9))
+
+            if let error = runtime.engine.errorMessage {
+                Text(error)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.red.opacity(0.95))
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    if runtime.engine.lines.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("No translated caption yet.")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.primary.opacity(0.82))
+
+                            Text("Press Start Capture and speak one sentence.")
+                                .font(.system(size: 12, weight: .regular, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 18)
+                    } else {
+                        ForEach(runtime.engine.lines) { line in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(line.translatedText)
+                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.primary)
+
+                                Text(line.sourceText)
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(innerCardBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                    }
+                }
+                .padding(6)
+            }
+            .frame(minHeight: 170, maxHeight: 300)
+        }
+        .padding(14)
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(cardBorder, lineWidth: 1)
+        )
+        .shadow(color: shadowColor, radius: 14, y: 8)
+    }
+
+    private var settingsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Settings")
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary.opacity(0.9))
+
+            CaptioneerSettingsView(settings: runtime.settings) {
+                runtime.refreshOverlayLayout()
+            }
+        }
+        .padding(14)
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(cardBorder, lineWidth: 1)
+        )
+        .shadow(color: shadowColor, radius: 14, y: 8)
+    }
+
+    private func statusPill(title: String, color: Color, systemImage: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(title)
+        }
+        .font(.system(size: 12, weight: .semibold, design: .rounded))
+        .foregroundStyle(.primary.opacity(0.78))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(color.opacity(0.14), in: Capsule())
+    }
+
+    private var baseBackgroundTop: Color {
+        colorScheme == .dark ? Color(red: 0.10, green: 0.12, blue: 0.15) : Color(nsColor: .windowBackgroundColor)
+    }
+
+    private var baseBackgroundBottom: Color {
+        colorScheme == .dark ? Color(red: 0.07, green: 0.09, blue: 0.12) : Color.white
+    }
+
+    private var cardBackground: Color {
+        colorScheme == .dark ? Color.white.opacity(0.06) : .white
+    }
+
+    private var cardBorder: Color {
+        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
+    }
+
+    private var innerCardBackground: Color {
+        colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04)
+    }
+
+    private var secondaryButtonBackground: Color {
+        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
+    }
+
+    private var secondaryButtonForeground: Color {
+        colorScheme == .dark ? Color.white.opacity(0.92) : Color.primary.opacity(0.8)
+    }
+
+    private var shadowColor: Color {
+        colorScheme == .dark ? .black.opacity(0.18) : .black.opacity(0.04)
     }
 }
 

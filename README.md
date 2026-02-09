@@ -94,6 +94,13 @@ xattr -cr ~/Applications/Captioneer.app
 
 Long lines wrap to next line (no forced single-line truncation).
 
+## UI Highlights
+
+- Minimal soft UI in both light and dark appearance
+- Card-based live caption feed with cleaner readability
+- Floating overlay supports drag + live resize
+- Overlay position controls: width, offsets, floating size
+
 ## Settings
 
 From the main app window:
@@ -102,6 +109,8 @@ From the main app window:
 - `Target Language`
 - `Overlay Position`
 - `Overlay Width` (slider, persistent)
+- `Overlay Horizontal / Vertical Offset`
+- `Floating Width / Height`
 - `Visible Lines`
 - `OBS Output Path`
 - `Context Buffer` (kept for tuning behavior)

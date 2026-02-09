@@ -38,6 +38,10 @@ final class CaptioneerSettings {
         static let targetLanguageCode = "captioneer.targetLanguageCode"
         static let overlayPosition = "captioneer.overlayPosition"
         static let overlayWidthRatio = "captioneer.overlayWidthRatio"
+        static let overlayOffsetX = "captioneer.overlayOffsetX"
+        static let overlayOffsetY = "captioneer.overlayOffsetY"
+        static let floatingWidth = "captioneer.floatingWidth"
+        static let floatingHeight = "captioneer.floatingHeight"
         static let obsOutputPath = "captioneer.obsOutputPath"
         static let streamingBufferWordCount = "captioneer.streamingBufferWordCount"
         static let maxVisibleLines = "captioneer.maxVisibleLines"
@@ -63,6 +67,22 @@ final class CaptioneerSettings {
 
     var overlayWidthRatio: Double {
         didSet { defaults.set(overlayWidthRatio, forKey: Keys.overlayWidthRatio) }
+    }
+
+    var overlayOffsetX: Double {
+        didSet { defaults.set(overlayOffsetX, forKey: Keys.overlayOffsetX) }
+    }
+
+    var overlayOffsetY: Double {
+        didSet { defaults.set(overlayOffsetY, forKey: Keys.overlayOffsetY) }
+    }
+
+    var floatingWidth: Double {
+        didSet { defaults.set(floatingWidth, forKey: Keys.floatingWidth) }
+    }
+
+    var floatingHeight: Double {
+        didSet { defaults.set(floatingHeight, forKey: Keys.floatingHeight) }
     }
 
     var streamingBufferWordCount: Int {
@@ -127,6 +147,11 @@ final class CaptioneerSettings {
         let storedOverlayWidth = defaults.double(forKey: Keys.overlayWidthRatio)
         overlayWidthRatio = min(0.95, max(0.40, storedOverlayWidth == 0 ? 0.82 : storedOverlayWidth))
 
+        overlayOffsetX = min(420, max(-420, defaults.double(forKey: Keys.overlayOffsetX)))
+        overlayOffsetY = min(320, max(-320, defaults.double(forKey: Keys.overlayOffsetY)))
+        floatingWidth = min(1400, max(420, defaults.double(forKey: Keys.floatingWidth) == 0 ? 820 : defaults.double(forKey: Keys.floatingWidth)))
+        floatingHeight = min(520, max(120, defaults.double(forKey: Keys.floatingHeight) == 0 ? 220 : defaults.double(forKey: Keys.floatingHeight)))
+
         let storedBufferCount = defaults.integer(forKey: Keys.streamingBufferWordCount)
         streamingBufferWordCount = max(3, storedBufferCount == 0 ? 6 : storedBufferCount)
 
@@ -162,84 +187,185 @@ final class CaptioneerSettings {
 }
 
 struct CaptioneerSettingsView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Bindable var settings: CaptioneerSettings
     var onOverlayLayoutChange: (() -> Void)?
 
     var body: some View {
-        Form {
-            Section("Languages") {
-                Picker("Source Language", selection: $settings.sourceLanguageCode) {
-                    ForEach(CaptioneerSettings.sourceLanguages) { language in
-                        Text(language.label).tag(language.code)
+        VStack(alignment: .leading, spacing: 14) {
+            sectionCard("Languages") {
+                row("Source") {
+                    Picker("Source Language", selection: $settings.sourceLanguageCode) {
+                        ForEach(CaptioneerSettings.sourceLanguages) { language in
+                            Text(language.label).tag(language.code)
+                        }
                     }
+                    .labelsHidden()
+                    .frame(width: 220)
                 }
 
-                Picker("Target Language", selection: $settings.targetLanguageCode) {
-                    ForEach(CaptioneerSettings.targetLanguages) { language in
-                        Text(language.label).tag(language.code)
+                row("Target") {
+                    Picker("Target Language", selection: $settings.targetLanguageCode) {
+                        ForEach(CaptioneerSettings.targetLanguages) { language in
+                            Text(language.label).tag(language.code)
+                        }
                     }
+                    .labelsHidden()
+                    .frame(width: 220)
                 }
             }
 
-            Section("Overlay") {
-                Picker("Position", selection: $settings.overlayPosition) {
-                    ForEach(CaptionOverlayPosition.allCases) { position in
-                        Text(position.label).tag(position)
+            sectionCard("Overlay") {
+                row("Position") {
+                    Picker("Position", selection: $settings.overlayPosition) {
+                        ForEach(CaptionOverlayPosition.allCases) { position in
+                            Text(position.label).tag(position)
+                        }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 430)
                 }
-                .pickerStyle(.segmented)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Width")
-                        Spacer()
-                        Text("\(Int(settings.overlayWidthRatio * 100))%")
-                            .foregroundStyle(.secondary)
-                    }
-
+                sliderRow("Width", value: "\(Int(settings.overlayWidthRatio * 100))%") {
                     Slider(value: $settings.overlayWidthRatio, in: 0.40...0.95, step: 0.01)
                 }
 
-                Stepper(value: $settings.maxVisibleLines, in: 2...8) {
-                    Text("Visible lines: \(settings.maxVisibleLines)")
+                sliderRow("Horizontal", value: "\(Int(settings.overlayOffsetX)) px") {
+                    Slider(value: $settings.overlayOffsetX, in: -420...420, step: 1)
+                }
+
+                sliderRow("Vertical", value: "\(Int(settings.overlayOffsetY)) px") {
+                    Slider(value: $settings.overlayOffsetY, in: -320...320, step: 1)
+                }
+
+                row("Visible lines") {
+                    Stepper(value: $settings.maxVisibleLines, in: 2...8) {
+                        Text("\(settings.maxVisibleLines)")
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                    .frame(width: 220, alignment: .trailing)
+                }
+
+                if settings.overlayPosition == .floating {
+                    sliderRow("Floating Width", value: "\(Int(settings.floatingWidth)) px") {
+                        Slider(value: $settings.floatingWidth, in: 420...1400, step: 1)
+                    }
+
+                    sliderRow("Floating Height", value: "\(Int(settings.floatingHeight)) px") {
+                        Slider(value: $settings.floatingHeight, in: 120...520, step: 1)
+                    }
+                }
+
+                HStack {
+                    Spacer()
+                    Button("Reset Position") {
+                        settings.overlayOffsetX = 0
+                        settings.overlayOffsetY = 0
+                    }
+                    .buttonStyle(.borderless)
                 }
             }
 
-            Section("Context Buffer") {
-                Stepper(value: $settings.streamingBufferWordCount, in: 3...14) {
-                    Text("Translate after ~\(settings.streamingBufferWordCount) words")
+            sectionCard("Output") {
+                sliderRow("Context buffer", value: "\(settings.streamingBufferWordCount) words") {
+                    Slider(value: Binding(
+                        get: { Double(settings.streamingBufferWordCount) },
+                        set: { settings.streamingBufferWordCount = Int($0) }
+                    ), in: 3...14, step: 1)
                 }
 
-                Text("Longer buffer = daha doğru cümle çevirisi, daha az kelime-kelime hata.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("OBS Output") {
-                TextField("/path/to/captioneer-live.txt", text: $settings.obsOutputPath)
-                    .textFieldStyle(.roundedBorder)
-
-                Button("Choose File") {
-                    chooseOBSPath()
+                row("OBS file") {
+                    HStack(spacing: 8) {
+                        TextField("/path/to/captioneer-live.txt", text: $settings.obsOutputPath)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Browse") {
+                            chooseOBSPath()
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .frame(width: 430)
                 }
             }
 
-            Section {
-                Text("Privacy-first: Mikrofon tanıma on-device çalışır; OBS çıktısı sadece local .txt dosyasına yazılır.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            Text("Privacy-first: Speech recognition and captions are processed locally on your Mac.")
+                .font(.system(size: 12, weight: .regular, design: .rounded))
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
         }
-        .formStyle(.grouped)
         .onChange(of: settings.overlayPosition) { _, _ in
             onOverlayLayoutChange?()
         }
         .onChange(of: settings.overlayWidthRatio) { _, _ in
             onOverlayLayoutChange?()
         }
+        .onChange(of: settings.overlayOffsetX) { _, _ in
+            onOverlayLayoutChange?()
+        }
+        .onChange(of: settings.overlayOffsetY) { _, _ in
+            onOverlayLayoutChange?()
+        }
         .onChange(of: settings.maxVisibleLines) { _, _ in
             onOverlayLayoutChange?()
         }
+        .onChange(of: settings.floatingWidth) { _, _ in
+            onOverlayLayoutChange?()
+        }
+        .onChange(of: settings.floatingHeight) { _, _ in
+            onOverlayLayoutChange?()
+        }
+    }
+
+    @ViewBuilder
+    private func sectionCard<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary.opacity(0.82))
+            content()
+        }
+        .padding(12)
+        .background(sectionBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(sectionBorder, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func row<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(.primary.opacity(0.75))
+                .frame(width: 120, alignment: .leading)
+            Spacer(minLength: 0)
+            content()
+        }
+    }
+
+    @ViewBuilder
+    private func sliderRow<Content: View>(_ label: String, value: String, @ViewBuilder slider: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.primary.opacity(0.75))
+                Spacer()
+                Text(value)
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            slider()
+        }
+    }
+
+    private var sectionBackground: Color {
+        colorScheme == .dark ? Color.white.opacity(0.06) : .white
+    }
+
+    private var sectionBorder: Color {
+        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
     }
 
     private func chooseOBSPath() {

@@ -3,7 +3,7 @@ import AppKit
 import Observation
 
 @MainActor
-final class CaptionOverlayController {
+final class CaptionOverlayController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private let settings: CaptioneerSettings
     private let engine: CaptionEngine
@@ -11,6 +11,7 @@ final class CaptionOverlayController {
     init(settings: CaptioneerSettings, engine: CaptionEngine) {
         self.settings = settings
         self.engine = engine
+        super.init()
     }
 
     var isVisible: Bool {
@@ -34,8 +35,7 @@ final class CaptionOverlayController {
     func refreshPositionIfVisible(animated: Bool = true) {
         guard let panel else { return }
 
-        panel.isMovableByWindowBackground = settings.overlayPosition == .floating
-        panel.hasShadow = settings.overlayPosition == .floating
+        configurePanelStyle(panel)
 
         let frame = targetFrame()
         panel.setFrame(frame, display: true, animate: animated)
@@ -63,8 +63,29 @@ final class CaptionOverlayController {
         panel.hidesOnDeactivate = false
         panel.sharingType = .none
         panel.contentView = contentView
+        panel.delegate = self
+        configurePanelStyle(panel)
 
         self.panel = panel
+    }
+
+    private func configurePanelStyle(_ panel: NSPanel) {
+        if settings.overlayPosition == .floating {
+            panel.styleMask = [.titled, .resizable, .fullSizeContentView, .nonactivatingPanel]
+            panel.titleVisibility = .hidden
+            panel.titlebarAppearsTransparent = true
+            panel.isMovableByWindowBackground = true
+            panel.hasShadow = true
+            panel.standardWindowButton(.closeButton)?.isHidden = true
+            panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            panel.standardWindowButton(.zoomButton)?.isHidden = true
+            panel.minSize = NSSize(width: 420, height: 120)
+            panel.maxSize = NSSize(width: 1400, height: 520)
+        } else {
+            panel.styleMask = [.borderless, .nonactivatingPanel]
+            panel.isMovableByWindowBackground = false
+            panel.hasShadow = false
+        }
     }
 
     private func targetFrame() -> NSRect {
@@ -73,22 +94,46 @@ final class CaptionOverlayController {
         }
 
         let visible = screen.visibleFrame
-        let width = min(max(420, visible.width * settings.overlayWidthRatio), 1400)
+        let width = settings.overlayPosition == .floating
+            ? min(max(420, CGFloat(settings.floatingWidth)), 1400)
+            : min(max(420, visible.width * settings.overlayWidthRatio), 1400)
         let baseHeight = max(110, min(220, CGFloat(settings.maxVisibleLines) * 27 + 44))
-        let height: CGFloat = settings.overlayPosition == .floating ? baseHeight + 8 : baseHeight
-        let x = visible.midX - (width / 2)
+        let height: CGFloat = settings.overlayPosition == .floating
+            ? min(max(120, CGFloat(settings.floatingHeight)), 520)
+            : baseHeight
+        let defaultX = visible.midX - (width / 2)
 
-        let y: CGFloat
+        let defaultY: CGFloat
         switch settings.overlayPosition {
         case .top:
-            y = visible.maxY - height - 12
+            defaultY = visible.maxY - height - 12
         case .bottom:
-            y = visible.minY + 24
+            defaultY = visible.minY + 24
         case .floating:
-            y = visible.midY - (height / 2)
+            defaultY = visible.midY - (height / 2)
         }
 
+        let offsetX = CGFloat(settings.overlayOffsetX)
+        let offsetY = CGFloat(settings.overlayOffsetY)
+        let proposedX = defaultX + offsetX
+        let proposedY = defaultY + offsetY
+
+        let minX = visible.minX
+        let maxX = visible.maxX - width
+        let minY = visible.minY
+        let maxY = visible.maxY - height
+
+        let x = min(max(proposedX, minX), maxX)
+        let y = min(max(proposedY, minY), maxY)
+
         return NSRect(x: x, y: y, width: width, height: height)
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard settings.overlayPosition == .floating else { return }
+        guard let panel else { return }
+        settings.floatingWidth = panel.frame.width
+        settings.floatingHeight = panel.frame.height
     }
 }
 
