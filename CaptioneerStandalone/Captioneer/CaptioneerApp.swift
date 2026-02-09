@@ -51,7 +51,7 @@ struct CaptioneerApp: App {
     var body: some Scene {
         WindowGroup("Captioneer") {
             CaptioneerHomeView(runtime: runtime)
-                .frame(minWidth: 760, minHeight: 760)
+                .frame(minWidth: 760, minHeight: 560)
                 .modifier(CaptionTranslationBridge(runtime: runtime))
         }
         .windowStyle(.hiddenTitleBar)
@@ -71,6 +71,7 @@ struct CaptioneerApp: App {
 private struct CaptioneerHomeView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Bindable var runtime: CaptioneerRuntime
+    @State private var isSettingsPresented = false
 
     var body: some View {
         ZStack {
@@ -79,15 +80,16 @@ private struct CaptioneerHomeView: View {
                            endPoint: .bottom)
             .ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    header
-                    controlBar
-                    liveCard
-                    settingsCard
-                }
-                .padding(20)
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                controlBar
+                liveCard
             }
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .sheet(isPresented: $isSettingsPresented) {
+            settingsSheet
         }
     }
 
@@ -148,6 +150,17 @@ private struct CaptioneerHomeView: View {
             .background(secondaryButtonBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .foregroundStyle(secondaryButtonForeground)
 
+            Button {
+                isSettingsPresented = true
+            } label: {
+                Label("Settings", systemImage: "slider.horizontal.3")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .frame(minWidth: 120, minHeight: 42)
+            }
+            .buttonStyle(.plain)
+            .background(secondaryButtonBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .foregroundStyle(secondaryButtonForeground)
+
             Spacer()
 
             statusPill(title: runtime.settings.sourceLanguageLabel, color: .blue, systemImage: "mic.fill")
@@ -203,26 +216,7 @@ private struct CaptioneerHomeView: View {
                 }
                 .padding(6)
             }
-            .frame(minHeight: 170, maxHeight: 300)
-        }
-        .padding(14)
-        .background(cardBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(cardBorder, lineWidth: 1)
-        )
-        .shadow(color: shadowColor, radius: 14, y: 8)
-    }
-
-    private var settingsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Settings")
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary.opacity(0.9))
-
-            CaptioneerSettingsView(settings: runtime.settings) {
-                runtime.refreshOverlayLayout()
-            }
+            .frame(minHeight: 220, maxHeight: .infinity, alignment: .top)
         }
         .padding(14)
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -275,6 +269,37 @@ private struct CaptioneerHomeView: View {
 
     private var shadowColor: Color {
         colorScheme == .dark ? .black.opacity(0.18) : .black.opacity(0.04)
+    }
+
+    private var settingsSheet: some View {
+        ZStack {
+            LinearGradient(colors: [baseBackgroundTop, baseBackgroundBottom],
+                           startPoint: .top,
+                           endPoint: .bottom)
+            .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Settings")
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Button("Done") {
+                        isSettingsPresented = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                ScrollView {
+                    CaptioneerSettingsView(settings: runtime.settings) {
+                        runtime.refreshOverlayLayout()
+                    }
+                    .padding(.bottom, 8)
+                }
+            }
+            .padding(20)
+        }
+        .frame(minWidth: 700, minHeight: 620)
     }
 }
 
