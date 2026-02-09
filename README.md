@@ -1,5 +1,9 @@
 # Captioneer
 
+<p align="center">
+  <img src="CaptioneerStandalone/Captioneer/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png" width="180" alt="Captioneer icon">
+</p>
+
 On-device live captions for macOS:
 
 - Listen from microphone
@@ -44,11 +48,17 @@ Then in Xcode:
 
 ## Install with Homebrew
 
-After the first GitHub release is published:
+Install:
 
 ```bash
 brew tap radioheavy/captioneer https://github.com/radioheavy/captioneer
 brew install --cask --appdir="$HOME/Applications" radioheavy/captioneer/captioneer
+```
+
+Update to latest release:
+
+```bash
+brew reinstall --cask --force --appdir="$HOME/Applications" radioheavy/captioneer/captioneer
 ```
 
 Open:
