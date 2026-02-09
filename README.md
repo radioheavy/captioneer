@@ -15,7 +15,6 @@ On-device live captions for macOS:
 This repository currently contains:
 
 - `CaptioneerStandalone/` -> the standalone Captioneer app (active project)
-- `Textream/` -> original upstream base project kept for reference
 
 ## Privacy-First
 
@@ -194,3 +193,7 @@ xcodebuild \
 ## License
 
 MIT
+
+## Thanks
+
+Special thanks to the original Textream creator and maintainer for the foundation and inspiration that made Captioneer possible.
