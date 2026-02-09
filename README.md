@@ -47,14 +47,20 @@ Then in Xcode:
 After the first GitHub release is published:
 
 ```bash
-brew tap radioheavy/captioneer
-brew install --cask captioneer
+brew tap radioheavy/captioneer https://github.com/radioheavy/captioneer
+brew install --cask --appdir="$HOME/Applications" radioheavy/captioneer/captioneer
 ```
 
-If macOS blocks first launch:
+Open:
 
 ```bash
-xattr -cr /Applications/Captioneer.app
+open ~/Applications/Captioneer.app
+```
+
+If macOS blocks first launch, run:
+
+```bash
+xattr -cr ~/Applications/Captioneer.app
 ```
 
 ## What Captioneer Does
