@@ -1,0 +1,57 @@
+{
+  "$schema": "https://wvw.dev/apps.schema.json",
+  "store": {
+    "name": "radioheavy Apps",
+    "developer": "radioheavy",
+    "tagline": "Privacy-first captioning tools for macOS",
+    "github": "https://github.com/radioheavy"
+  },
+  "categories": [
+    {
+      "id": "macos",
+      "name": "macOS Apps"
+    },
+    {
+      "id": "productivity",
+      "name": "Productivity"
+    },
+    {
+      "id": "photo-video",
+      "name": "Photo & Video"
+    }
+  ],
+  "apps": [
+    {
+      "id": "radioheavy-captioneer",
+      "name": "Captioneer",
+      "subtitle": "Live translated captions for OBS and on-screen overlays",
+      "description": "A privacy-first macOS app for on-device transcription, translation, and live overlay captions.",
+      "longDescription": "Captioneer is a macOS menu bar app that listens to your microphone, transcribes speech on-device, translates it in real time, and renders the latest lines in a configurable overlay. It can also publish live caption text to a local file for OBS workflows, making it useful for streams, recordings, and presentations.",
+      "icon": "https://raw.githubusercontent.com/radioheavy/captioneer/master/CaptioneerStandalone/Captioneer/Assets.xcassets/AppIcon.appiconset/icon_512x512.png",
+      "iconEmoji": "💬",
+      "iconStyle": {
+        "scale": 1.3,
+        "objectFit": "cover",
+        "borderRadius": "22%"
+      },
+      "category": [
+        "macos",
+        "productivity",
+        "photo-video"
+      ],
+      "platform": "macOS",
+      "price": "Free",
+      "github": "https://github.com/radioheavy/captioneer",
+      "downloadUrl": "https://github.com/radioheavy/captioneer/releases/latest",
+      "language": "Swift",
+      "requirements": "macOS 15.7 or later",
+      "features": [
+        "On-device speech recognition with real-time translation",
+        "Top, bottom, or floating caption overlays",
+        "Live text-file output for OBS caption overlays",
+        "Configurable source and target languages",
+        "Menu bar controls with privacy-first local processing"
+      ]
+    }
+  ]
+}
