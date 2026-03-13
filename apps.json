@@ -3,7 +3,7 @@
   "store": {
     "name": "radioheavy Apps",
     "developer": "radioheavy",
-    "tagline": "Privacy-first captioning tools for macOS",
+    "tagline": "Privacy-first AI tools for creators and developers",
     "github": "https://github.com/radioheavy"
   },
   "categories": [
@@ -24,9 +24,10 @@
     {
       "id": "radioheavy-captioneer",
       "name": "Captioneer",
-      "subtitle": "Live translated captions for OBS and on-screen overlays",
-      "description": "A privacy-first macOS app for on-device transcription, translation, and live overlay captions.",
-      "longDescription": "Captioneer is a macOS menu bar app that listens to your microphone, transcribes speech on-device, translates it in real time, and renders the latest lines in a configurable overlay. It can also publish live caption text to a local file for OBS workflows, making it useful for streams, recordings, and presentations.",
+      "developer": "radioheavy",
+      "subtitle": "On-device live captions, translation, and OBS-ready overlays for macOS",
+      "description": "Transcribe microphone audio locally, translate it in real time, and publish overlay captions for streams, recordings, and presentations.",
+      "longDescription": "Captioneer is a privacy-first macOS menu bar app for live speech transcription and translation. It listens to your microphone with on-device Apple speech recognition, translates finalized lines, renders captions in top, bottom, or floating overlays, and can continuously write the latest caption text to a local file for OBS workflows. It is built for streamers, presenters, and recordings that need low-friction live subtitles without a cloud account in the core app flow.",
       "icon": "https://raw.githubusercontent.com/radioheavy/captioneer/master/CaptioneerStandalone/Captioneer/Assets.xcassets/AppIcon.appiconset/icon_512x512.png",
       "iconEmoji": "💬",
       "iconStyle": {
@@ -42,15 +43,17 @@
       "platform": "macOS",
       "price": "Free",
       "github": "https://github.com/radioheavy/captioneer",
+      "brew": "brew install --cask radioheavy/captioneer/captioneer",
       "downloadUrl": "https://github.com/radioheavy/captioneer/releases/latest",
       "language": "Swift",
-      "requirements": "macOS 15.7 or later",
+      "requirements": "macOS 15 Sequoia or later",
       "features": [
-        "On-device speech recognition with real-time translation",
-        "Top, bottom, or floating caption overlays",
-        "Live text-file output for OBS caption overlays",
-        "Configurable source and target languages",
-        "Menu bar controls with privacy-first local processing"
+        "On-device speech recognition with local-first transcription flow",
+        "Real-time translation into a target language",
+        "Top, bottom, or floating live caption overlays",
+        "Local text-file output for OBS and streaming overlays",
+        "Menu bar controls and persistent overlay settings",
+        "No account required for the core caption workflow"
       ]
     }
   ]
